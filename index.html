@@ -415,12 +415,12 @@ async function submitMileage(){
     }
     if(firstEmpty>35)throw new Error("Page 1 is full (rows 11-35 all used)");
 
-    // Write each leg to consecutive rows on page 1
-    const writeValues=legs.map(l=>{
-      // Date as serial number for Excel, or string
-      return [ds, l.fromName+" → "+l.toName, l.km??0, null];
-    });
-    const lastRow=firstEmpty+legs.length-1;
+    // Build single row: date, all stops comma-separated, total km
+    const route=buildRoute();
+    const description=route.join(", ");
+    const totalKm=legs.reduce((s,l)=>s+(l.km||0),0);
+    const writeValues=[[ds, description, parseFloat(totalKm.toFixed(1)), null]];
+    const lastRow=firstEmpty;
     const range="A"+firstEmpty+":D"+lastRow;
     const writeRes=await fetch(base+"/range(address='"+range+"')",{
       method:"PATCH",
