@@ -401,17 +401,41 @@ async function submitMileage(){
   document.getElementById("appStatus").textContent="";
   try{
     const tok=await getToken(),fp=getSavedFilePath(),ds=fmtDate(tripDate);
-    const rows=legs.map(l=>[ds,l.fromName+" \u2192 "+l.toName,l.km??0,null]);
-    const url="https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(fp)+":/workbook/tables/MileageLog/rows/add";
-    const res=await fetch(url,{method:"POST",headers:{"Authorization":"Bearer "+tok,"Content-Type":"application/json"},body:JSON.stringify({values:rows})});
-    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||"HTTP "+res.status);}
+    const base="https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(fp)+":/workbook/worksheets/page%201";
+
+    // Find first empty row in page 1 (rows 11-35 = Excel data area)
+    const usedRes=await fetch(base+"/range(address='A11:D35')",{headers:{"Authorization":"Bearer "+tok}});
+    if(!usedRes.ok)throw new Error("Could not read page 1");
+    const usedData=await usedRes.json();
+    const values=usedData.values||[];
+    let firstEmpty=11;
+    for(let i=0;i<values.length;i++){
+      if(values[i][0]===null||values[i][0]===""){firstEmpty=11+i;break;}
+      firstEmpty=11+i+1;
+    }
+    if(firstEmpty>35)throw new Error("Page 1 is full (rows 11-35 all used)");
+
+    // Write each leg to consecutive rows on page 1
+    const writeValues=legs.map(l=>{
+      // Date as serial number for Excel, or string
+      return [ds, l.fromName+" → "+l.toName, l.km??0, null];
+    });
+    const lastRow=firstEmpty+legs.length-1;
+    const range="A"+firstEmpty+":D"+lastRow;
+    const writeRes=await fetch(base+"/range(address='"+range+"')",{
+      method:"PATCH",
+      headers:{"Authorization":"Bearer "+tok,"Content-Type":"application/json"},
+      body:JSON.stringify({values:writeValues})
+    });
+    if(!writeRes.ok){const e=await writeRes.json().catch(()=>({}));throw new Error(e?.error?.message||"HTTP "+writeRes.status);}
+
     const tot=legs.reduce((s,l)=>s+(l.km||0),0);
-    btn.className="submit-btn success";btn.textContent="\u2713 Saved "+legs.length+" leg"+(legs.length>1?"s":"")+" — "+tot.toFixed(1)+" km";
+    btn.className="submit-btn success";btn.textContent="✓ Saved "+legs.length+" leg"+(legs.length>1?"s":"")+" — "+tot.toFixed(1)+" km";
     stops=[];
     setTimeout(()=>{renderRoute();btn.textContent="Log mileage to OneDrive";btn.className="submit-btn";btn.disabled=true;},3000);
   }catch(e){
     btn.className="submit-btn error";btn.textContent="Failed — tap to retry";btn.disabled=false;
-    document.getElementById("appStatus").textContent="\u26a0\ufe0f "+e.message;
+    document.getElementById("appStatus").textContent="⚠️ "+e.message;
     document.getElementById("appStatus").className="status-bar err";
   }
 }
