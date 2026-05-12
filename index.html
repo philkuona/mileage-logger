@@ -305,9 +305,12 @@ async function signIn(){
 function signOut(){if(confirm("Sign out?"))msalInst.logoutRedirect();}
 
 async function getToken(){
+  const inst=await getMsal();
+  if(!acct){const a=inst.getAllAccounts();if(a.length)acct=a[0];}
+  if(!acct){await inst.loginRedirect({scopes:["Files.ReadWrite","User.Read"]});return;}
   const r={scopes:["Files.ReadWrite"],account:acct};
-  try{return(await msalInst.acquireTokenSilent(r)).accessToken;}
-  catch{return(await msalInst.acquireTokenPopup(r)).accessToken;}
+  try{return(await inst.acquireTokenSilent(r)).accessToken;}
+  catch{return(await inst.acquireTokenPopup(r)).accessToken;}
 }
 
 function saveClientId(){
