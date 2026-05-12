@@ -110,8 +110,11 @@ a{color:var(--accent)}
     <div class="setup-card">
       <h2>&#128194; OneDrive file path</h2>
       <p>Enter the path to your mileage form inside OneDrive. Only needed once.</p>
-      <input class="config-input" id="filePathInput" placeholder="/Documents/Mileage Tracker/Mileage_Form_2026_PA.xlsx" value="/Documents/Mileage Tracker/Mileage_Form_2026_PA.xlsx">
-      <button class="modal-btn" style="margin-top:14px;width:100%" onclick="saveFilePath()">Save &amp; Continue</button>
+      <button class="modal-btn" style="width:100%;background:var(--accent2);color:#000;margin-bottom:8px" onclick="browseOneDrive()">&#128269; Search OneDrive for file</button>
+      <p style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:6px">— or type path manually —</p>
+      <input class="config-input" id="filePathInput" placeholder="/Documents/Mileage_Form_2026_PA.xlsm">
+      <div style="font-size:11px;color:var(--muted);margin-top:6px" id="foundFiles"></div>
+      <button class="modal-btn" style="margin-top:10px;width:100%" onclick="saveFilePath()">Save &amp; Continue</button>
     </div>
     <div class="setup-hint" id="setupStatus"></div>
     <div class="setup-card" id="azureHelpCard" style="display:none">
@@ -183,6 +186,37 @@ let msalInst,acct,stops=[],tripDate=new Date();
 
 function getSavedClientId(){return localStorage.getItem("mileage_client_id")||""}
 function getSavedFilePath(){return localStorage.getItem("mileage_file_path")||""}
+
+
+async function browseOneDrive(){
+  document.getElementById("foundFiles").textContent="Searching...";
+  try{
+    const tok=await getToken();
+    // Search for the file by name
+    const res=await fetch("https://graph.microsoft.com/v1.0/me/drive/root/search(q='Mileage_Form_2026_PA')?$select=name,parentReference,id",{
+      headers:{"Authorization":"Bearer "+tok}
+    });
+    const data=await res.json();
+    if(data.value&&data.value.length>0){
+      const files=data.value;
+      let html="Found "+files.length+" file(s) — tap to select:<br>";
+      files.forEach(f=>{
+        const path=(f.parentReference.path||"").replace("/drive/root:","")+"/" +f.name;
+        html+='<div style="margin-top:6px;padding:8px;background:var(--surface);border-radius:8px;cursor:pointer;font-size:12px;font-family:DM Mono,monospace;color:var(--accent)" onclick="selectFile(\''+path+'\')">'+path+'</div>';
+      });
+      document.getElementById("foundFiles").innerHTML=html;
+    } else {
+      document.getElementById("foundFiles").textContent="No file found. Try typing the path manually.";
+    }
+  }catch(e){
+    document.getElementById("foundFiles").textContent="Search error: "+e.message;
+  }
+}
+
+function selectFile(path){
+  document.getElementById("filePathInput").value=path;
+  document.getElementById("foundFiles").innerHTML='<span style="color:var(--accent2)">&#10003; Selected: '+path+'</span>';
+}
 
 async function getMsal(){
   if(msalInst)return msalInst;
