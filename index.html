@@ -266,14 +266,21 @@ function selectFile(path){
   document.getElementById("foundFiles").innerHTML='<div style="margin-top:6px;padding:8px;background:rgba(110,231,183,.1);border:1px solid var(--accent2);border-radius:8px;font-size:12px;color:var(--accent2)">&#10003; '+path+'</div>';
 }
 
+let _msalReady=null;
+
 async function getMsal(){
   if(msalInst)return msalInst;
+  if(_msalReady)return _msalReady;
   const cid=getSavedClientId();
   if(!cid){showAzureHelp();return null;}
   const msalLib=window.msalBrowser||window.msal;
-  msalInst=new msalLib.PublicClientApplication({auth:{clientId:cid,authority:"https://login.microsoftonline.com/organizations",redirectUri:location.href.split("?")[0].split("#")[0]},cache:{cacheLocation:"localStorage"}});
-  await msalInst.initialize();
-  return msalInst;
+  if(!msalLib){document.getElementById("loginStatus").textContent="Auth library not loaded. Check internet connection.";return null;}
+  const inst=new msalLib.PublicClientApplication({
+    auth:{clientId:cid,authority:"https://login.microsoftonline.com/organizations",redirectUri:location.href.split("?")[0].split("#")[0]},
+    cache:{cacheLocation:"localStorage"}
+  });
+  _msalReady=inst.initialize().then(()=>{msalInst=inst;_msalReady=null;return inst;});
+  return _msalReady;
 }
 
 async function initAuth(){
@@ -306,8 +313,9 @@ function signOut(){if(confirm("Sign out?"))msalInst.logoutRedirect();}
 
 async function getToken(){
   const inst=await getMsal();
+  if(!inst)throw new Error("Not signed in");
   if(!acct){const a=inst.getAllAccounts();if(a.length)acct=a[0];}
-  if(!acct){await inst.loginRedirect({scopes:["Files.ReadWrite","User.Read"]});return;}
+  if(!acct){await inst.loginRedirect({scopes:["Files.ReadWrite","User.Read"]});throw new Error("Redirecting to login");}
   const r={scopes:["Files.ReadWrite"],account:acct};
   try{return(await inst.acquireTokenSilent(r)).accessToken;}
   catch{return(await inst.acquireTokenPopup(r)).accessToken;}
