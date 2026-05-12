@@ -104,18 +104,18 @@ a{color:var(--accent)}
     Sign in with Microsoft
   </button>
   <div class="status-bar err" id="loginStatus"></div>
-  <div class="setup-hint">First time? You need a free Azure App ID.<br><a href="#" onclick="showAzureHelp()">How to get one &rarr;</a></div>
+  <div class="setup-hint">Sign in with your RCSD Microsoft account to get started.</div>
 </div>
 
 <div class="screen" id="setupScreen">
   <div style="padding:20px 20px 0"><h1>Setup</h1></div>
   <div class="main">
     <div class="setup-card">
-      <h2>&#128194; OneDrive file path</h2>
-      <p>Enter the path to your mileage form inside OneDrive. Only needed once.</p>
-      <button class="modal-btn" style="width:100%;background:var(--accent2);color:#000;margin-bottom:8px" onclick="browseOneDrive()">&#128269; Search OneDrive for file</button>
+      <h2>&#128194; Select Template File</h2>
+      <p>Browse to your <strong>Mileage_Form_2026_PA.xlsm</strong> template. The app will copy it each month automatically.</p>
+      <button class="modal-btn" style="width:100%;background:var(--accent2);color:#000;margin-bottom:8px" onclick="browseOneDrive()">&#128193; Browse OneDrive</button>
       <p style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:6px">— or type path manually —</p>
-      <input class="config-input" id="filePathInput" placeholder="/Documents/Mileage_Form_2026_PA.xlsm">
+      <input class="config-input" id="filePathInput" placeholder="/MileageLogger/Mileage_Form_2026_PA.xlsm">
       <div style="font-size:11px;color:var(--muted);margin-top:6px" id="foundFiles"></div>
       <button class="modal-btn" style="margin-top:10px;width:100%" onclick="saveFilePath()">Save &amp; Continue</button>
     </div>
@@ -147,7 +147,10 @@ a{color:var(--accent)}
     </div>
     <div class="header-right">
       <div class="date-badge" id="dateBadge" onclick="openDateModal()">&#128197; Today</div>
+      <div style="display:flex;gap:6px">
+      <div class="user-badge" onclick="resetFilePath()">&#9881; Settings</div>
       <div class="user-badge" id="userBadge" onclick="signOut()">Sign out</div>
+    </div>
     </div>
   </header>
   <div class="main">
@@ -187,8 +190,28 @@ const D={"CEC":{"DESH":4.2,"FAUS":5.7,"MTMS":6.8,"SACR":3.9,"ANGE":10.5,"AUGU":5
 
 let msalInst,acct,stops=[],tripDate=new Date();
 
-function getSavedClientId(){return localStorage.getItem("mileage_client_id")||""}
+function getSavedClientId(){return "e11852a2-8e8d-4a75-996b-0b5d6f66efaa";}
 function getSavedFilePath(){return localStorage.getItem("mileage_file_path")||""}
+function getTemplatePath(){return localStorage.getItem("mileage_file_path")||""}
+
+function getMonthlyFileName(){
+  const d=new Date();
+  const month=d.toLocaleString("en-US",{month:"long"});
+  const year=d.getFullYear();
+  return "Mileage_"+month+"_"+year+".xlsm";
+}
+
+function getMonthlyFilePath(){
+  const tpl=getTemplatePath();
+  if(!tpl)return "";
+  const folder=tpl.substring(0,tpl.lastIndexOf("/"));
+  return folder+"/"+getMonthlyFileName();
+}
+
+function getActiveFilePath(){
+  // Use monthly file path, not template
+  return getMonthlyFilePath();
+}
 
 
 let _browserStack=[];
@@ -301,7 +324,84 @@ async function initAuth(){
 function afterLogin(){
   const fp=getSavedFilePath();
   if(!fp){showScreen("setupScreen");}
-  else{document.getElementById("userBadge").textContent=acct?.username||"Sign out";showScreen("appScreen");}
+  else{
+    document.getElementById("userBadge").textContent=acct?.username||"Sign out";
+    showScreen("appScreen");
+    ensureMonthlyFile();
+  }
+}
+
+async function ensureMonthlyFile(){
+  const monthlyPath=getMonthlyFilePath();
+  const templatePath=getTemplatePath();
+  if(!monthlyPath||!templatePath)return;
+
+  const monthName=getMonthlyFileName();
+  document.getElementById("appStatus").textContent="Checking "+monthName+"...";
+  document.getElementById("appStatus").className="status-bar";
+
+  try{
+    const tok=await getToken();
+    // Check if monthly file already exists
+    const checkRes=await fetch(
+      "https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(monthlyPath),
+      {headers:{"Authorization":"Bearer "+tok}}
+    );
+
+    if(checkRes.ok){
+      // File exists
+      document.getElementById("appStatus").textContent="Using "+monthName;
+      document.getElementById("appStatus").className="status-bar ok";
+      setTimeout(()=>{document.getElementById("appStatus").textContent="";},3000);
+      return;
+    }
+
+    // File doesn't exist — copy template
+    document.getElementById("appStatus").textContent="Creating "+monthName+"...";
+
+    // Get template item ID
+    const tplRes=await fetch(
+      "https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(templatePath),
+      {headers:{"Authorization":"Bearer "+tok}}
+    );
+    if(!tplRes.ok)throw new Error("Template file not found. Check setup.");
+    const tplData=await tplRes.json();
+    const tplId=tplData.id;
+
+    // Get destination folder ID
+    const folder=monthlyPath.substring(0,monthlyPath.lastIndexOf("/"));
+    const folderRes=await fetch(
+      "https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(folder),
+      {headers:{"Authorization":"Bearer "+tok}}
+    );
+    if(!folderRes.ok)throw new Error("Could not find destination folder");
+    const folderData=await folderRes.json();
+
+    // Copy template to new monthly file
+    const copyRes=await fetch(
+      "https://graph.microsoft.com/v1.0/me/drive/items/"+tplId+"/copy",
+      {
+        method:"POST",
+        headers:{"Authorization":"Bearer "+tok,"Content-Type":"application/json"},
+        body:JSON.stringify({
+          parentReference:{driveId:folderData.parentReference?.driveId||tplData.parentReference.driveId,id:folderData.id},
+          name:monthName
+        })
+      }
+    );
+    if(!copyRes.ok){const e=await copyRes.json().catch(()=>({}));throw new Error(e?.error?.message||"Copy failed");}
+
+    // Copy is async — wait a moment then confirm
+    document.getElementById("appStatus").textContent="Creating "+monthName+"... please wait";
+    await new Promise(r=>setTimeout(r,3000));
+    document.getElementById("appStatus").textContent="✓ "+monthName+" ready!";
+    document.getElementById("appStatus").className="status-bar ok";
+    setTimeout(()=>{document.getElementById("appStatus").textContent="";},3000);
+
+  }catch(e){
+    document.getElementById("appStatus").textContent="⚠️ "+e.message;
+    document.getElementById("appStatus").className="status-bar err";
+  }
 }
 
 async function signIn(){
@@ -347,6 +447,13 @@ function saveFilePath(){
   if(!v.startsWith("/")){document.getElementById("setupStatus").textContent="Path must start with /";return;}
   localStorage.setItem("mileage_file_path",v);
   afterLogin();
+}
+
+function resetFilePath(){
+  if(confirm("Change template file? You will need to browse OneDrive again.")){
+    localStorage.removeItem("mileage_file_path");
+    showScreen("setupScreen");
+  }
 }
 
 function showAzureHelp(){
@@ -408,7 +515,7 @@ async function submitMileage(){
   btn.disabled=true;btn.className="submit-btn loading";btn.textContent="Saving to OneDrive…";
   document.getElementById("appStatus").textContent="";
   try{
-    const tok=await getToken(),fp=getSavedFilePath(),ds=fmtDate(tripDate);
+    const tok=await getToken(),fp=getActiveFilePath(),ds=fmtDate(tripDate);
     const base="https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(fp)+":/workbook/worksheets/page%201";
 
     // Find first empty row in page 1 (rows 11-35 = Excel data area)
