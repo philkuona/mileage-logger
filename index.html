@@ -188,34 +188,82 @@ function getSavedClientId(){return localStorage.getItem("mileage_client_id")||""
 function getSavedFilePath(){return localStorage.getItem("mileage_file_path")||""}
 
 
+let _browserStack=[];
+
 async function browseOneDrive(){
-  document.getElementById("foundFiles").textContent="Searching...";
+  _browserStack=[];
+  await _listFolder("root","/ (OneDrive root)");
+}
+
+async function _listFolder(folderId, folderName){
+  const el=document.getElementById("foundFiles");
+  el.innerHTML='<span style="color:var(--muted);font-size:12px">Loading...</span>';
   try{
     const tok=await getToken();
-    // Search for the file by name
-    const res=await fetch("https://graph.microsoft.com/v1.0/me/drive/root/search(q='Mileage_Form_2026_PA')?$select=name,parentReference,id",{
-      headers:{"Authorization":"Bearer "+tok}
-    });
+    const url=folderId==="root"
+      ?"https://graph.microsoft.com/v1.0/me/drive/root/children?$select=name,id,folder,file,parentReference"
+      :"https://graph.microsoft.com/v1.0/me/drive/items/"+folderId+"/children?$select=name,id,folder,file,parentReference";
+    const res=await fetch(url,{headers:{"Authorization":"Bearer "+tok}});
     const data=await res.json();
-    if(data.value&&data.value.length>0){
-      const files=data.value;
-      let html="Found "+files.length+" file(s) — tap to select:<br>";
-      files.forEach(f=>{
-        const path=(f.parentReference.path||"").replace("/drive/root:","")+"/" +f.name;
-        html+='<div style="margin-top:6px;padding:8px;background:var(--surface);border-radius:8px;cursor:pointer;font-size:12px;font-family:DM Mono,monospace;color:var(--accent)" onclick="selectFile(\''+path+'\')">'+path+'</div>';
-      });
-      document.getElementById("foundFiles").innerHTML=html;
-    } else {
-      document.getElementById("foundFiles").textContent="No file found. Try typing the path manually.";
+    if(!data.value){el.innerHTML='<span style="color:var(--danger);font-size:12px">Error loading folder</span>';return;}
+
+    const items=data.value.filter(i=>i.folder||(i.file&&(i.name.endsWith(".xlsm")||i.name.endsWith(".xlsx"))));
+    items.sort((a,b)=>{
+      if(a.folder&&!b.folder)return -1;
+      if(!a.folder&&b.folder)return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    let html='<div style="font-size:11px;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:8px">';
+    if(_browserStack.length>0){
+      html+='<span style="cursor:pointer;color:var(--accent)" onclick="_goBack()">&#8592; Back</span> &middot; ';
     }
+    html+=folderName+'</div>';
+
+    if(items.length===0){
+      html+='<div style="font-size:12px;color:var(--muted)">No folders or .xlsm files here</div>';
+    } else {
+      items.forEach(item=>{
+        if(item.folder){
+          html+='<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;background:var(--surface);border-radius:8px;cursor:pointer;margin-top:5px" onclick="_openFolder(\''+item.id+'\',\''+item.name.replace(/'/g,"")+'\')">'
+            +'<span style="font-size:16px">&#128193;</span>'
+            +'<span style="font-size:13px;color:var(--text)">'+item.name+'</span>'
+            +'<span style="margin-left:auto;color:var(--muted);font-size:12px">&#8250;</span>'
+            +'</div>';
+        } else {
+          const path=(item.parentReference.path||"").replace("/drive/root:","")+"/" +item.name;
+          html+='<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;background:var(--chip-bg);border:1px solid var(--chip-border);border-radius:8px;cursor:pointer;margin-top:5px" onclick="selectFile(\''+path.replace(/'/g,"")+'\')">'
+            +'<span style="font-size:16px">&#128196;</span>'
+            +'<span style="font-size:13px;color:var(--accent)">'+item.name+'</span>'
+            +'<span style="margin-left:auto;font-size:11px;color:var(--accent2)">Select</span>'
+            +'</div>';
+        }
+      });
+    }
+    el.innerHTML=html;
   }catch(e){
-    document.getElementById("foundFiles").textContent="Search error: "+e.message;
+    document.getElementById("foundFiles").innerHTML='<span style="color:var(--danger);font-size:12px">Error: '+e.message+'</span>';
+  }
+}
+
+function _openFolder(id,name){
+  _browserStack.push({id,name});
+  _listFolder(id,name);
+}
+
+function _goBack(){
+  _browserStack.pop();
+  if(_browserStack.length===0){
+    _listFolder("root","/ (OneDrive root)");
+  } else {
+    const prev=_browserStack[_browserStack.length-1];
+    _listFolder(prev.id,prev.name);
   }
 }
 
 function selectFile(path){
   document.getElementById("filePathInput").value=path;
-  document.getElementById("foundFiles").innerHTML='<span style="color:var(--accent2)">&#10003; Selected: '+path+'</span>';
+  document.getElementById("foundFiles").innerHTML='<div style="margin-top:6px;padding:8px;background:rgba(110,231,183,.1);border:1px solid var(--accent2);border-radius:8px;font-size:12px;color:var(--accent2)">&#10003; '+path+'</div>';
 }
 
 async function getMsal(){
