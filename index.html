@@ -189,7 +189,7 @@ async function getMsal(){
   const cid=getSavedClientId();
   if(!cid){showAzureHelp();return null;}
   const msalLib=window.msalBrowser||window.msal;
-  msalInst=new msalLib.PublicClientApplication({auth:{clientId:cid,authority:"https://login.microsoftonline.com/common",redirectUri:location.href.split("?")[0].split("#")[0]},cache:{cacheLocation:"localStorage"}});
+  msalInst=new msalLib.PublicClientApplication({auth:{clientId:cid,authority:"https://login.microsoftonline.com/organizations",redirectUri:location.href.split("?")[0].split("#")[0]},cache:{cacheLocation:"localStorage"}});
   await msalInst.initialize();
   return msalInst;
 }
