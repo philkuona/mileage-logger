@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Mileage">
 <title>Mileage Logger</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js"></script>
 <style>
 :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3350;--accent:#4f8ef7;--accent2:#6ee7b7;--danger:#f87171;--text:#e8eaf6;--muted:#6b7280;--chip-bg:#1e3a5f;--chip-border:#4f8ef7}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -188,7 +188,8 @@ async function getMsal(){
   if(msalInst)return msalInst;
   const cid=getSavedClientId();
   if(!cid){showAzureHelp();return null;}
-  msalInst=new msal.PublicClientApplication({auth:{clientId:cid,authority:"https://login.microsoftonline.com/common",redirectUri:location.href.split("?")[0].split("#")[0]},cache:{cacheLocation:"localStorage"}});
+  const msalLib=window.msalBrowser||window.msal;
+  msalInst=new msalLib.PublicClientApplication({auth:{clientId:cid,authority:"https://login.microsoftonline.com/common",redirectUri:location.href.split("?")[0].split("#")[0]},cache:{cacheLocation:"localStorage"}});
   await msalInst.initialize();
   return msalInst;
 }
