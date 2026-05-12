@@ -184,16 +184,25 @@ let msalInst,acct,stops=[],tripDate=new Date();
 function getSavedClientId(){return localStorage.getItem("mileage_client_id")||""}
 function getSavedFilePath(){return localStorage.getItem("mileage_file_path")||""}
 
+async function getMsal(){
+  if(msalInst)return msalInst;
+  const cid=getSavedClientId();
+  if(!cid){showAzureHelp();return null;}
+  msalInst=new msal.PublicClientApplication({auth:{clientId:cid,authority:"https://login.microsoftonline.com/common",redirectUri:location.href.split("?")[0].split("#")[0]},cache:{cacheLocation:"localStorage"}});
+  await msalInst.initialize();
+  return msalInst;
+}
+
 async function initAuth(){
   const cid=getSavedClientId();
-  if(!cid){showAzureHelp();return}
+  if(!cid){showAzureHelp();return;}
   try{
-    msalInst=new msal.PublicClientApplication({auth:{clientId:cid,authority:"https://login.microsoftonline.com/common",redirectUri:location.href.split("?")[0].split("#")[0]},cache:{cacheLocation:"localStorage"}});
-    await msalInst.initialize();
-    const r=await msalInst.handleRedirectPromise();
+    const inst=await getMsal();
+    if(!inst)return;
+    const r=await inst.handleRedirectPromise();
     if(r){acct=r.account;afterLogin();}
-    else{const a=msalInst.getAllAccounts();if(a.length){acct=a[0];afterLogin();}}
-  }catch(e){document.getElementById("loginStatus").textContent="Auth error: "+e.message}
+    else{const a=inst.getAllAccounts();if(a.length){acct=a[0];afterLogin();}}
+  }catch(e){document.getElementById("loginStatus").textContent="Auth error: "+e.message;}
 }
 
 function afterLogin(){
@@ -203,11 +212,11 @@ function afterLogin(){
 }
 
 async function signIn(){
-  const cid=getSavedClientId();
-  if(!cid){showAzureHelp();return;}
-  if(!msalInst)await initAuth();
-  try{await msalInst.loginRedirect({scopes:["Files.ReadWrite","User.Read"]});}
-  catch(e){document.getElementById("loginStatus").textContent="Sign-in error: "+e.message}
+  try{
+    const inst=await getMsal();
+    if(!inst)return;
+    await inst.loginRedirect({scopes:["Files.ReadWrite","User.Read"]});
+  }catch(e){document.getElementById("loginStatus").textContent="Sign-in error: "+e.message;}
 }
 
 function signOut(){if(confirm("Sign out?"))msalInst.logoutRedirect();}
