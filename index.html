@@ -120,6 +120,17 @@ a{color:var(--accent)}
       <button class="modal-btn" style="margin-top:10px;width:100%" onclick="saveFilePath()">Save &amp; Continue</button>
     </div>
     <div class="setup-hint" id="setupStatus"></div>
+    <div class="setup-card" id="profileCard" style="display:none">
+      <h2>&#128100; Your Profile</h2>
+      <p>Enter your name and draw your signature. Used to fill the form each month.</p>
+      <input class="config-input" id="userNameInput" placeholder="e.g. Philip Kuona" style="margin-top:0;font-family:DM Sans,sans-serif;font-size:14px">
+      <div style="margin-top:14px;font-size:12px;color:var(--muted);margin-bottom:6px">Draw your signature below:</div>
+      <canvas id="sigCanvas" width="320" height="100" style="width:100%;background:#fff;border-radius:8px;border:1.5px solid var(--border);touch-action:none;cursor:crosshair"></canvas>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button onclick="clearSig()" style="flex:1;padding:8px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:DM Sans,sans-serif;font-size:13px;cursor:pointer">Clear</button>
+        <button onclick="saveProfile()" class="modal-btn" style="flex:2">Save Profile</button>
+      </div>
+    </div>
     <div class="setup-card" id="azureHelpCard" style="display:none">
       <h2>&#128736; Azure App ID setup</h2>
       <p style="margin-bottom:8px">One-time setup (~10 mins):</p>
@@ -391,9 +402,13 @@ async function ensureMonthlyFile(){
     );
     if(!copyRes.ok){const e=await copyRes.json().catch(()=>({}));throw new Error(e?.error?.message||"Copy failed");}
 
-    // Copy is async — wait a moment then confirm
+    // Copy is async — wait a moment for OneDrive to finish
     document.getElementById("appStatus").textContent="Creating "+monthName+"... please wait";
-    await new Promise(r=>setTimeout(r,3000));
+    await new Promise(r=>setTimeout(r,4000));
+
+    // Fill header fields on page 1
+    await fillFormHeader(tok, folder+"/"+monthName);
+
     document.getElementById("appStatus").textContent="✓ "+monthName+" ready!";
     document.getElementById("appStatus").className="status-bar ok";
     setTimeout(()=>{document.getElementById("appStatus").textContent="";},3000);
@@ -446,11 +461,61 @@ function saveFilePath(){
   const v=document.getElementById("filePathInput").value.trim();
   if(!v.startsWith("/")){document.getElementById("setupStatus").textContent="Path must start with /";return;}
   localStorage.setItem("mileage_file_path",v);
+  // Show profile setup if not done yet
+  if(!localStorage.getItem("mileage_user_name")){
+    document.getElementById("profileCard").style.display="block";
+    // Pre-fill name if known
+    const saved=localStorage.getItem("mileage_user_name")||"";
+    document.getElementById("userNameInput").value=saved;
+    initSigPad();
+    document.getElementById("profileCard").scrollIntoView({behavior:"smooth"});
+  } else {
+    afterLogin();
+  }
+}
+
+function saveProfile(){
+  const name=document.getElementById("userNameInput").value.trim();
+  if(!name){document.getElementById("setupStatus").textContent="Please enter your name";return;}
+  localStorage.setItem("mileage_user_name",name);
+  // Save signature as base64
+  const canvas=document.getElementById("sigCanvas");
+  const sig=canvas.toDataURL("image/png");
+  localStorage.setItem("mileage_signature",sig);
   afterLogin();
 }
 
+// Signature pad
+let _sigDrawing=false,_sigCtx=null;
+function initSigPad(){
+  const canvas=document.getElementById("sigCanvas");
+  _sigCtx=canvas.getContext("2d");
+  _sigCtx.strokeStyle="#1a1a2e";
+  _sigCtx.lineWidth=2.5;
+  _sigCtx.lineCap="round";
+  _sigCtx.lineJoin="round";
+
+  function getPos(e){
+    const r=canvas.getBoundingClientRect();
+    const scaleX=canvas.width/r.width;
+    const scaleY=canvas.height/r.height;
+    const src=e.touches?e.touches[0]:e;
+    return{x:(src.clientX-r.left)*scaleX,y:(src.clientY-r.top)*scaleY};
+  }
+  canvas.onmousedown=canvas.ontouchstart=e=>{e.preventDefault();_sigDrawing=true;const p=getPos(e);_sigCtx.beginPath();_sigCtx.moveTo(p.x,p.y);};
+  canvas.onmousemove=canvas.ontouchmove=e=>{e.preventDefault();if(!_sigDrawing)return;const p=getPos(e);_sigCtx.lineTo(p.x,p.y);_sigCtx.stroke();};
+  canvas.onmouseup=canvas.ontouchend=()=>{_sigDrawing=false;};
+}
+function clearSig(){if(_sigCtx){const c=document.getElementById("sigCanvas");_sigCtx.clearRect(0,0,c.width,c.height);}}
+
 function resetFilePath(){
-  if(confirm("Change template file? You will need to browse OneDrive again.")){
+  const choice=confirm("Settings:\n\nOK = Change template file\nCancel = Edit profile (name/signature)");
+  if(choice){
+    localStorage.removeItem("mileage_file_path");
+    showScreen("setupScreen");
+  } else {
+    localStorage.removeItem("mileage_user_name");
+    localStorage.removeItem("mileage_signature");
     localStorage.removeItem("mileage_file_path");
     showScreen("setupScreen");
   }
@@ -509,6 +574,29 @@ si.addEventListener("input",function(){
 si.addEventListener("blur",()=>setTimeout(hideSuggestions,150));
 function hideSuggestions(){sg.classList.remove("visible");sg.innerHTML="";}
 
+async function fillFormHeader(tok, filePath){
+  const name=localStorage.getItem("mileage_user_name")||"";
+  const now=new Date();
+  const monthYear=now.toLocaleString("en-US",{month:"long",year:"numeric"});
+  const base="https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(filePath)+":/workbook/worksheets/page%201";
+
+  // Fill Name (B2), Location (B3), Date (B4)
+  const headerVals=[[name],[" CEC"],[monthYear]];
+  await fetch(base+"/range(address='B2:B4')",{
+    method:"PATCH",
+    headers:{"Authorization":"Bearer "+tok,"Content-Type":"application/json"},
+    body:JSON.stringify({values:headerVals})
+  });
+
+  // Fill signature field — write name as text signature (B37 or nearby)
+  // Find signature row by writing to common signature area
+  await fetch(base+"/range(address='B37')",{
+    method:"PATCH",
+    headers:{"Authorization":"Bearer "+tok,"Content-Type":"application/json"},
+    body:JSON.stringify({values:[[name]]})
+  }).catch(()=>{});
+}
+
 async function submitMileage(){
   const btn=document.getElementById("submitBtn"),legs=calcLegs();
   if(!legs.length)return;
@@ -516,6 +604,11 @@ async function submitMileage(){
   document.getElementById("appStatus").textContent="";
   try{
     const tok=await getToken(),fp=getActiveFilePath(),ds=fmtDate(tripDate);
+    // Show which file we are writing to
+    const fname=fp.substring(fp.lastIndexOf("/")+1);
+    document.getElementById("appStatus").textContent="Writing to: "+fname;
+    document.getElementById("appStatus").className="status-bar";
+    await new Promise(r=>setTimeout(r,1500));
     const base="https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(fp)+":/workbook/worksheets/page%201";
 
     // Find first empty row in page 1 (rows 11-35 = Excel data area)
