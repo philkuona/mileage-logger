@@ -1,4 +1,4 @@
-const CACHE = 'mileage-v2';
+const CACHE = 'mileage-v3';
 const ASSETS = [
   './',
   './index.html',

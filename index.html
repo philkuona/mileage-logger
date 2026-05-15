@@ -436,7 +436,11 @@ async function getToken(){
   if(!acct){await inst.loginRedirect({scopes:["Files.ReadWrite","User.Read"]});throw new Error("Redirecting to login");}
   const r={scopes:["Files.ReadWrite"],account:acct};
   try{return(await inst.acquireTokenSilent(r)).accessToken;}
-  catch{return(await inst.acquireTokenPopup(r)).accessToken;}
+  catch{
+    // Popup blocked in PWA — use redirect instead
+    await inst.acquireTokenRedirect(r);
+    return null;
+  }
 }
 
 function saveClientId(){
