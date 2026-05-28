@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mileage">
+<title>Mileage Logger</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f1117">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js"></script>
+<style>
+:root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3350;--accent:#4f8ef7;--accent2:#6ee7b7;--danger:#f87171;--text:#e8eaf6;--muted:#6b7280;--chip-bg:#1e3a5f;--chip-border:#4f8ef7}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--text);font-family:"DM Sans",sans-serif;min-height:100dvh;display:flex;flex-direction:column}
+.screen{display:none;flex-direction:column;min-height:100dvh}
+.screen.active{display:flex}
+#loginScreen{align-items:center;justify-content:center;gap:28px;padding:40px 24px;text-align:center}
+.login-icon{font-size:52px}
+.login-title{font-size:26px;font-weight:600;letter-spacing:-.5px}
+.login-sub{font-size:13px;color:var(--muted);line-height:1.6;max-width:280px}
+.ms-btn{display:flex;align-items:center;gap:12px;background:#2f5996;border:none;border-radius:10px;padding:14px 24px;color:#fff;font-family:"DM Sans",sans-serif;font-size:15px;font-weight:500;cursor:pointer;width:100%;max-width:300px;justify-content:center}
+#setupScreen{align-items:center;justify-content:center;padding:32px 20px;gap:16px}
+.setup-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:360px;width:100%}
+.setup-card h2{font-size:17px;margin-bottom:10px}
+.setup-card p{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px}
+.config-input{width:100%;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-family:"DM Mono",monospace;font-size:12px;color:var(--text);outline:none;margin-top:10px}
+.config-input:focus{border-color:var(--accent)}
+header{padding:16px 20px 0;display:flex;align-items:flex-start;justify-content:space-between}
+.logo-label{font-family:"DM Mono",monospace;font-size:10px;letter-spacing:.2em;color:var(--muted);text-transform:uppercase;margin-bottom:2px}
+h1{font-size:21px;font-weight:600;letter-spacing:-.5px}
+.header-right{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.date-badge{font-family:"DM Mono",monospace;font-size:11px;color:var(--accent);background:rgba(79,142,247,.1);border:1px solid rgba(79,142,247,.2);border-radius:6px;padding:4px 8px;cursor:pointer}
+.user-badge{font-size:11px;color:var(--muted);cursor:pointer;padding:2px 6px;border-radius:4px;border:1px solid transparent}
+.main{flex:1;padding:14px 20px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}
+.route-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px;min-height:68px}
+.route-label{font-family:"DM Mono",monospace;font-size:10px;letter-spacing:.15em;color:var(--muted);text-transform:uppercase;margin-bottom:8px}
+.route-stops{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.stop-chip{display:inline-flex;align-items:center;gap:6px;background:var(--chip-bg);border:1px solid var(--chip-border);border-radius:20px;padding:5px 10px 5px 12px;font-size:13px;font-weight:500;color:var(--accent);animation:chipIn .2s ease}
+.stop-chip.origin{background:rgba(110,231,183,.1);border-color:var(--accent2);color:var(--accent2)}
+.stop-chip .remove{width:16px;height:16px;background:rgba(79,142,247,.2);border:none;border-radius:50%;color:var(--accent);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.stop-chip.origin .remove{display:none}
+.arrow{color:var(--muted);font-size:14px;flex-shrink:0}
+.empty-state{color:var(--muted);font-size:13px;font-style:italic}
+@keyframes chipIn{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
+.km-preview{font-family:"DM Mono",monospace;font-size:11px;color:var(--accent2);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:none}
+.km-preview.visible{display:block}
+.search-wrap{position:relative}
+.search-input{width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;font-family:"DM Sans",sans-serif;font-size:16px;color:var(--text);outline:none;-webkit-appearance:none}
+.search-input:focus{border-color:var(--accent)}
+.search-input::placeholder{color:var(--muted)}
+.suggestions{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--surface2);border:1px solid var(--border);border-radius:14px;overflow:hidden;z-index:100;box-shadow:0 8px 32px rgba(0,0,0,.4);display:none}
+.suggestions.visible{display:block}
+.suggestion-item{padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04)}
+.suggestion-item:last-child{border-bottom:none}
+.suggestion-item:active{background:rgba(79,142,247,.1)}
+.suggestion-code{font-family:"DM Mono",monospace;font-size:12px;font-weight:500;color:var(--accent);background:rgba(79,142,247,.1);padding:2px 7px;border-radius:5px;min-width:44px;text-align:center}
+.suggestion-name{font-size:14px;color:var(--text);flex:1}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:13px 16px}
+.toggle-info{display:flex;flex-direction:column;gap:2px}
+.toggle-title{font-size:14px;font-weight:500}
+.toggle-sub{font-size:12px;color:var(--muted)}
+.toggle{position:relative;width:44px;height:26px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:var(--border);border-radius:13px;cursor:pointer;transition:background .2s}
+.slider:before{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .2s}
+input:checked+.slider{background:var(--accent)}
+input:checked+.slider:before{transform:translateX(18px)}
+.submit-btn{width:100%;padding:15px;background:var(--accent);border:none;border-radius:14px;color:#fff;font-family:"DM Sans",sans-serif;font-size:16px;font-weight:600;cursor:pointer;transition:opacity .15s,transform .1s;letter-spacing:-.2px}
+.submit-btn:active{transform:scale(.98);opacity:.9}
+.submit-btn:disabled{background:var(--border);color:var(--muted);cursor:not-allowed;transform:none}
+.submit-btn.loading{background:var(--surface2);color:var(--muted)}
+.submit-btn.success{background:#059669}
+.submit-btn.error{background:#dc2626}
+.clear-btn{width:100%;padding:11px;background:transparent;border:1px solid var(--border);border-radius:14px;color:var(--muted);font-family:"DM Sans",sans-serif;font-size:14px;cursor:pointer}
+.status-bar{font-size:12px;text-align:center;color:var(--muted);padding:2px 8px;min-height:18px;line-height:1.4}
+.status-bar.err{color:var(--danger)}
+.status-bar.ok{color:var(--accent2)}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:flex-end;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface2);border-radius:20px 20px 0 0;padding:24px 20px 32px;width:100%;display:flex;flex-direction:column;gap:14px}
+.modal h2{font-size:17px;font-weight:600}
+.date-input{width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:11px 14px;font-family:"DM Sans",sans-serif;font-size:16px;color:var(--text);outline:none;-webkit-appearance:none;color-scheme:dark}
+.modal-btn{padding:13px;background:var(--accent);border:none;border-radius:12px;color:#fff;font-family:"DM Sans",sans-serif;font-size:15px;font-weight:600;cursor:pointer}
+.setup-hint{font-size:11px;color:var(--muted);text-align:center;line-height:1.5}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="screen active" id="loginScreen">
+  <div class="login-icon">🚗</div>
+  <div>
+    <div class="login-title">Mileage Logger</div>
+    <div style="font-family:DM Mono,monospace;font-size:10px;letter-spacing:.2em;color:var(--muted);text-align:center;margin-top:3px">RCSD &middot; PHILIP KUONA</div>
+  </div>
+  <div class="login-sub">Sign in with your Microsoft work account to log mileage directly to your OneDrive file.</div>
+  <button class="ms-btn" onclick="signIn()">
+    <svg width="20" height="20" viewBox="0 0 21 21"><rect width="10" height="10" fill="#F25022"/><rect x="11" width="10" height="10" fill="#7FBA00"/><rect y="11" width="10" height="10" fill="#00A4EF"/><rect x="11" y="11" width="10" height="10" fill="#FFB900"/></svg>
+    Sign in with Microsoft
+  </button>
+  <div class="status-bar err" id="loginStatus"></div>
+  <div class="setup-hint">Sign in with your RCSD Microsoft account to get started.</div>
+</div>
+
+<div class="screen" id="setupScreen">
+  <div style="padding:20px 20px 0"><h1>Setup</h1></div>
+  <div class="main">
+    <div class="setup-card">
+      <h2>&#128194; Select Template File</h2>
+      <p>Browse to your <strong>Mileage_Form_2026_PA.xlsm</strong> template. The app will copy it each month automatically.</p>
+      <button class="modal-btn" style="width:100%;background:var(--accent2);color:#000;margin-bottom:8px" onclick="browseOneDrive()">&#128193; Browse OneDrive</button>
+      <p style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:6px">— or type path manually —</p>
+      <input class="config-input" id="filePathInput" placeholder="/MileageLogger/Mileage_Form_2026_PA.xlsm">
+      <div style="font-size:11px;color:var(--muted);margin-top:6px" id="foundFiles"></div>
+      <button class="modal-btn" style="margin-top:10px;width:100%" onclick="saveFilePath()">Save &amp; Continue</button>
+    </div>
+    <div class="setup-hint" id="setupStatus"></div>
+    <div class="setup-card" id="profileCard" style="display:none">
+      <h2>&#128100; Your Profile</h2>
+      <p>Enter your name and draw your signature. Used to fill the form each month.</p>
+      <input class="config-input" id="userNameInput" placeholder="e.g. Philip Kuona" style="margin-top:0;font-family:DM Sans,sans-serif;font-size:14px">
+      <div style="margin-top:14px;font-size:12px;color:var(--muted);margin-bottom:6px">Draw your signature below:</div>
+      <canvas id="sigCanvas" width="320" height="100" style="width:100%;background:#fff;border-radius:8px;border:1.5px solid var(--border);touch-action:none;cursor:crosshair"></canvas>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button onclick="clearSig()" style="flex:1;padding:8px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:DM Sans,sans-serif;font-size:13px;cursor:pointer">Clear</button>
+        <button onclick="saveProfile()" class="modal-btn" style="flex:2">Save Profile</button>
+      </div>
+    </div>
+    <div class="setup-card" id="azureHelpCard" style="display:none">
+      <h2>&#128736; Azure App ID setup</h2>
+      <p style="margin-bottom:8px">One-time setup (~10 mins):</p>
+      <ol style="font-size:13px;color:var(--muted);line-height:1.8;padding-left:18px">
+        <li>Go to <a href="https://portal.azure.com" target="_blank">portal.azure.com</a></li>
+        <li>Search <strong>App registrations</strong> &rarr; New registration</li>
+        <li>Name: <strong>Mileage Logger</strong></li>
+        <li>Supported account types: <strong>Accounts in any organizational directory and personal Microsoft accounts</strong></li>
+        <li>Redirect URI: <strong>Single-page application</strong> &rarr; paste this page URL</li>
+        <li>Click Register &rarr; copy the <strong>Application (client) ID</strong></li>
+        <li>Go to API permissions &rarr; Add &rarr; Microsoft Graph &rarr; Delegated &rarr; add <strong>Files.ReadWrite</strong></li>
+        <li>Paste the ID below and tap Save</li>
+      </ol>
+      <input class="config-input" id="clientIdInput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+      <button class="modal-btn" style="margin-top:14px;width:100%" onclick="saveClientId()">Save Client ID</button>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="appScreen">
+  <header>
+    <div>
+      <div class="logo-label">RCSD &middot; Philip Kuona</div>
+      <h1>Mileage Logger</h1>
+    </div>
+    <div class="header-right">
+      <div class="date-badge" id="dateBadge" onclick="openDateModal()">&#128197; Today</div>
+      <div style="display:flex;gap:6px">
+      <div class="user-badge" onclick="resetFilePath()">&#9881; Settings</div>
+      <div class="user-badge" id="userBadge" onclick="signOut()">Sign out</div>
+    </div>
+    </div>
+  </header>
+  <div class="main">
+    <div class="route-card">
+      <div class="route-label">Route</div>
+      <div class="route-stops" id="routeStops"><div class="empty-state">Add stops below&hellip;</div></div>
+      <div class="km-preview" id="kmPreview"></div>
+    </div>
+    <div class="search-wrap">
+      <input class="search-input" id="searchInput" type="text" placeholder="Type school name or code&hellip;" autocomplete="off" autocorrect="off" spellcheck="false">
+      <div class="suggestions" id="suggestions"></div>
+    </div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <span class="toggle-title">Direct trip</span>
+        <span class="toggle-sub">No return to CEC at end</span>
+      </div>
+      <label class="toggle"><input type="checkbox" id="directToggle"><span class="slider"></span></label>
+    </div>
+    <button class="submit-btn" id="submitBtn" onclick="submitMileage()" disabled>Log mileage to OneDrive</button>
+    <button class="clear-btn" onclick="clearAll()">Clear all stops</button>
+    <div class="status-bar" id="appStatus"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="dateModal">
+  <div class="modal">
+    <h2>Select date</h2>
+    <input type="date" class="date-input" id="dateInput">
+    <button class="modal-btn" onclick="setDate()">Confirm</button>
+  </div>
+</div>
+
+<script>
+const LOCS=[{code:"ANGE",name:"St. Angela School"},{code:"AUGU",name:"St. Augustine School"},{code:"BERN",name:"St. Bernard School"},{code:"CATH",name:"St. Catherine School"},{code:"CEC",name:"Catholic Education Centre"},{code:"DESH",name:"Deshaye School"},{code:"DOMI",name:"St. Dominic School"},{code:"ELIZ",name:"St. Elizabeth School"},{code:"FAUS",name:"Father Faustino School"},{code:"FRAN",name:"St. Francis School"},{code:"GABR",name:"St. Gabriel School"},{code:"GREG",name:"St. Gregory School"},{code:"JERO",name:"St. Jerome School"},{code:"JOAN",name:"St. Joan of Arc School"},{code:"JOSA",name:"St. Josaphat School"},{code:"KATE",name:"St. Kateri School"},{code:"LEBO",name:"Leboldus High School"},{code:"LUKE",name:"St. Luke School"},{code:"MARG",name:"St. Margaret School"},{code:"MARY",name:"St. Mary School"},{code:"MATT",name:"St. Matthew School"},{code:"MICH",name:"St. Michael School"},{code:"MILL",name:"Miller High School"},{code:"MTMS",name:"Mother Teresa Middle School"},{code:"NICH",name:"St. Nicholas School"},{code:"ONEI",name:"St. O'Neill School"},{code:"PETE",name:"St. Peter School"},{code:"PIUS",name:"St. Pius X School"},{code:"RAPH",name:"St. Raphael School"},{code:"RIFF",name:"Riffel High School"},{code:"SACR",name:"Sacred Heart School"},{code:"SHOP",name:"Shop / Maintenance"},{code:"THER",name:"St. Theresa School"},{code:"TIMO",name:"St. Timothy School"}];
+const D={"CEC":{"DESH":4.2,"FAUS":5.7,"MTMS":6.8,"SACR":3.9,"ANGE":10.5,"AUGU":5.3,"BERN":7.3,"CATH":9.1,"DOMI":8.6,"ELIZ":12.6,"FRAN":5.5,"GABR":10.7,"GREG":9.5,"JERO":9.4,"JOAN":7.1,"JOSA":7.5,"KATE":4.7,"MARG":9.2,"MARY":6.1,"MATT":6.6,"MICH":6.7,"NICH":11.1,"PETE":6.0,"RAPH":7.3,"PIUS":2.8,"THER":9.7,"TIMO":7.5,"ONEI":5.9,"LEBO":4.5,"RIFF":8.9,"MILL":4.6,"LUKE":5.1,"SHOP":8.7},"DESH":{"CEC":4.2,"FAUS":6.5,"MTMS":8.0,"SACR":5.7,"ANGE":13.6,"AUGU":6.1,"BERN":10.3,"CATH":9.8,"DOMI":7.3,"ELIZ":13.0,"FRAN":8.6,"GABR":11.1,"GREG":10.7,"JERO":12.5,"JOAN":10.2,"JOSA":10.6,"KATE":3.6,"MARG":9.6,"MARY":9.2,"MATT":3.0,"MICH":8.0,"NICH":14.6,"PETE":8.8,"RAPH":8.6,"PIUS":1.7,"THER":11.0,"TIMO":10.5,"ONEI":8.1,"LEBO":1.7,"RIFF":12.0,"MILL":5.4,"LUKE":6.9,"SHOP":12.9},"FAUS":{"CEC":5.7,"DESH":6.5,"MTMS":5.1,"SACR":5.1,"ANGE":13.2,"BERN":10.1,"CATH":3.5,"DOMI":3.5,"ELIZ":7.4,"FRAN":8.4,"GABR":5.5,"GREG":7.5,"JERO":12.0,"JOAN":10.3,"JOSA":10.7,"KATE":9.3,"MARG":4.1,"MARY":8.5,"MATT":6.4,"MICH":5.1,"NICH":14.2,"PETE":7.2,"RAPH":5.8,"PIUS":5.3,"THER":4.7,"TIMO":8.9,"ONEI":7.1,"LEBO":5.2,"RIFF":11.6,"MILL":1.1,"LUKE":6.1,"SHOP":4.6},"MTMS":{"CEC":6.8,"DESH":8.0,"FAUS":5.1,"SACR":3.2,"ANGE":8.1,"AUGU":4.9,"BERN":4.9,"CATH":6.2,"DOMI":7.5,"ELIZ":11.4,"FRAN":5.4,"GABR":9.5,"GREG":2.7,"JERO":6.9,"JOAN":5.2,"JOSA":6.2,"KATE":10.3,"MARG":8.0,"MARY":3.7,"MATT":8.4,"NICH":9.1,"PETE":2.3,"RAPH":0.5,"PIUS":6.8,"THER":6.8,"TIMO":3.8,"ONEI":2.3,"LEBO":6.9,"RIFF":6.4,"MILL":4.4,"LUKE":2.8,"SHOP":3.1},"SACR":{"CEC":3.9,"DESH":5.7,"FAUS":5.1,"MTMS":3.2,"ANGE":8.1,"AUGU":4.9,"BERN":4.9,"CATH":6.4,"DOMI":7.5,"ELIZ":11.4,"FRAN":3.0,"GABR":9.6,"GREG":5.9,"JERO":6.9,"JOAN":4.7,"JOSA":5.1,"KATE":7.5,"MARG":8.1,"MARY":3.7,"MATT":8.0,"MICH":3.1,"NICH":8.9,"PETE":2.1,"RAPH":3.8,"PIUS":4.4,"THER":7.0,"TIMO":3.9,"ONEI":2.3,"LEBO":5.6,"RIFF":6.5,"MILL":4.5,"LUKE":1.3,"SHOP":5.1},"ANGE":{"CEC":10.5,"DESH":13.6,"FAUS":13.2,"MTMS":8.1,"SACR":8.1,"AUGU":13.0,"BERN":3.1,"CATH":13.0,"DOMI":15.3,"ELIZ":19.1,"FRAN":5.4,"GABR":17.3,"GREG":8.2,"JERO":2.3,"JOAN":4.1,"JOSA":4.3,"KATE":14.1,"MARG":15.8,"MARY":4.2,"MATT":16.1,"MICH":8.2,"NICH":1.0,"PETE":5.7,"RAPH":7.7,"PIUS":12.6,"THER":13.6,"TIMO":4.6,"ONEI":5.8,"LEBO":13.9,"RIFF":1.9,"MILL":12.7,"LUKE":7.1,"SHOP":9.6},"AUGU":{"CEC":5.3,"DESH":6.1,"MTMS":4.9,"SACR":4.9,"ANGE":13.0,"BERN":9.9,"CATH":3.7,"DOMI":3.5,"ELIZ":7.5,"FRAN":8.2,"GABR":5.6,"GREG":7.3,"JERO":11.9,"JOAN":9.7,"JOSA":10.1,"KATE":8.9,"MARG":4.1,"MARY":9.9,"MATT":6.1,"MICH":4.9,"NICH":14.1,"PETE":7.0,"RAPH":5.6,"PIUS":4.9,"THER":4.9,"TIMO":8.7,"ONEI":6.9,"LEBO":4.8,"RIFF":11.3,"MILL":0.7,"LUKE":5.9,"SHOP":4.8},"BERN":{"CEC":7.3,"DESH":10.3,"FAUS":10.1,"MTMS":4.9,"SACR":4.9,"ANGE":3.1,"AUGU":9.9,"CATH":9.8,"DOMI":12.2,"ELIZ":16.1,"FRAN":3.8,"GABR":14.2,"GREG":5.1,"JERO":2.2,"JOAN":2.6,"JOSA":3.9,"KATE":10.9,"MARG":12.8,"MARY":1.2,"MATT":12.9,"MICH":4.8,"NICH":3.9,"PETE":2.6,"RAPH":4.6,"PIUS":9.4,"THER":10.5,"TIMO":1.8,"ONEI":2.7,"LEBO":10.8,"RIFF":1.4,"MILL":9.6,"LUKE":3.6,"SHOP":6.4},"CATH":{"CEC":9.1,"DESH":9.8,"FAUS":3.5,"MTMS":6.2,"SACR":6.4,"ANGE":13.0,"AUGU":3.7,"BERN":9.8,"DOMI":3.2,"ELIZ":5.7,"FRAN":9.6,"GABR":3.9,"GREG":7.6,"JERO":11.9,"JOAN":11.5,"JOSA":11.6,"KATE":13.0,"MARG":3.0,"MARY":10.0,"MATT":7.7,"MICH":6.2,"NICH":14.0,"PETE":8.2,"RAPH":7.0,"PIUS":8.7,"THER":1.4,"TIMO":8.7,"ONEI":8.6,"LEBO":8.3,"RIFF":11.5,"MILL":4.5,"LUKE":7.4,"SHOP":4.0},"DOMI":{"CEC":8.6,"DESH":7.3,"FAUS":3.5,"MTMS":7.5,"SACR":7.5,"ANGE":15.3,"AUGU":3.5,"BERN":12.2,"CATH":3.2,"ELIZ":5.4,"FRAN":10.7,"GABR":3.6,"GREG":9.9,"JERO":14.2,"JOAN":12.3,"JOSA":12.7,"KATE":9.5,"MARG":2.1,"MARY":12.3,"MATT":5.0,"MICH":7.5,"NICH":16.3,"PETE":10.8,"RAPH":9.3,"PIUS":7.9,"THER":4.0,"TIMO":10.9,"ONEI":9.5,"LEBO":6.2,"RIFF":13.8,"MILL":4.0,"LUKE":8.5,"SHOP":6.0},"ELIZ":{"CEC":12.6,"DESH":13.0,"FAUS":7.4,"MTMS":11.4,"SACR":11.4,"ANGE":19.1,"AUGU":7.5,"BERN":16.1,"CATH":5.7,"DOMI":5.4,"FRAN":14.6,"GABR":1.8,"GREG":13.8,"JERO":18.0,"JOAN":16.2,"JOSA":16.7,"KATE":15.8,"MARG":3.6,"MARY":16.2,"MATT":10.5,"MICH":11.4,"NICH":20.2,"PETE":13.5,"RAPH":13.2,"PIUS":12.2,"THER":6.3,"TIMO":14.8,"ONEI":13.4,"LEBO":11.1,"RIFF":17.7,"MILL":8.0,"LUKE":12.4,"SHOP":9.8},"FRAN":{"CEC":5.5,"DESH":8.6,"FAUS":8.4,"MTMS":5.4,"SACR":3.0,"ANGE":5.4,"AUGU":8.2,"BERN":3.8,"CATH":9.6,"DOMI":10.7,"ELIZ":14.6,"GABR":12.8,"GREG":7.9,"JERO":4.3,"JOAN":1.8,"JOSA":2.2,"KATE":9.1,"MARG":11.3,"MARY":2.7,"MATT":11.1,"MICH":5.3,"NICH":5.7,"PETE":4.2,"RAPH":7.3,"PIUS":7.6,"THER":10.2,"TIMO":5.5,"ONEI":4.1,"LEBO":8.9,"RIFF":3.9,"MILL":7.7,"LUKE":3.5,"SHOP":7.3},"GABR":{"CEC":10.7,"DESH":11.1,"FAUS":5.5,"MTMS":9.5,"SACR":9.6,"ANGE":17.3,"AUGU":5.6,"BERN":14.2,"CATH":3.9,"DOMI":3.6,"ELIZ":1.8,"FRAN":12.8,"GREG":11.9,"JERO":16.2,"JOAN":14.3,"JOSA":14.8,"KATE":14.0,"MARG":1.7,"MARY":14.3,"MATT":8.6,"MICH":9.5,"NICH":18.3,"PETE":11.6,"RAPH":11.3,"PIUS":10.3,"THER":4.5,"TIMO":13.0,"ONEI":11.5,"LEBO":9.9,"RIFF":15.8,"MILL":6.1,"LUKE":10.5,"SHOP":8.0},"GREG":{"CEC":9.5,"DESH":10.7,"FAUS":7.5,"MTMS":2.7,"SACR":5.9,"ANGE":8.2,"AUGU":7.3,"BERN":5.1,"CATH":7.6,"DOMI":9.9,"ELIZ":13.8,"FRAN":7.9,"GABR":11.9,"JERO":7.1,"JOAN":6.6,"JOSA":7.9,"KATE":13.4,"MARG":10.4,"MARY":5.2,"MATT":13.8,"MICH":2.8,"NICH":9.2,"PETE":3.8,"RAPH":2.2,"PIUS":9.6,"THER":8.2,"TIMO":4.0,"ONEI":3.9,"LEBO":9.4,"RIFF":6.6,"MILL":6.8,"LUKE":5.2,"SHOP":4.0},"JERO":{"CEC":9.4,"DESH":12.5,"FAUS":12.0,"MTMS":6.9,"SACR":6.9,"ANGE":2.3,"AUGU":11.9,"BERN":2.2,"CATH":11.9,"DOMI":14.2,"ELIZ":18.0,"FRAN":4.3,"GABR":16.2,"GREG":7.1,"JOAN":3.0,"JOSA":2.5,"KATE":13.0,"MARG":14.7,"MARY":3.1,"MATT":15.9,"MICH":6.9,"NICH":2.1,"PETE":4.6,"RAPH":6.6,"PIUS":11.4,"THER":12.5,"TIMO":4.0,"ONEI":4.7,"LEBO":12.8,"RIFF":2.2,"MILL":11.4,"LUKE":6.0,"SHOP":8.4},"JOAN":{"CEC":7.1,"DESH":10.2,"FAUS":10.3,"MTMS":5.2,"SACR":4.7,"ANGE":4.1,"AUGU":9.7,"BERN":2.6,"CATH":11.5,"DOMI":12.3,"ELIZ":16.2,"FRAN":1.8,"GABR":14.3,"GREG":6.6,"JERO":3.0,"JOSA":1.0,"KATE":10.7,"MARG":12.9,"MARY":1.8,"MATT":13.4,"MICH":5.1,"NICH":4.3,"PETE":3.3,"RAPH":6.4,"PIUS":9.3,"THER":12.0,"TIMO":4.2,"ONEI":3.3,"LEBO":10.4,"RIFF":2.6,"MILL":9.2,"LUKE":3.8,"SHOP":7.9},"JOSA":{"CEC":7.5,"DESH":10.6,"FAUS":10.7,"MTMS":6.2,"SACR":5.1,"ANGE":4.3,"AUGU":10.1,"BERN":3.9,"CATH":11.6,"DOMI":12.7,"ELIZ":16.7,"FRAN":2.2,"GABR":14.8,"GREG":7.9,"JERO":2.5,"JOAN":1.0,"KATE":11.1,"MARG":13.3,"MARY":2.8,"MATT":13.9,"MICH":6.1,"NICH":3.8,"PETE":4.3,"RAPH":6.8,"PIUS":9.7,"THER":12.2,"TIMO":5.6,"ONEI":4.2,"LEBO":10.9,"RIFF":4.0,"MILL":9.7,"LUKE":4.2,"SHOP":9.3},"KATE":{"CEC":4.7,"DESH":3.6,"FAUS":9.3,"MTMS":10.3,"SACR":7.5,"ANGE":14.1,"AUGU":8.9,"BERN":10.9,"CATH":13.0,"DOMI":9.5,"ELIZ":15.8,"FRAN":9.1,"GABR":14.0,"GREG":13.4,"JERO":13.0,"JOAN":10.7,"JOSA":11.1,"MARG":11.6,"MARY":9.7,"MATT":5.0,"MICH":10.3,"NICH":15.1,"PETE":9.6,"RAPH":11.0,"PIUS":3.9,"THER":13.3,"TIMO":11.1,"ONEI":9.5,"LEBO":4.4,"RIFF":12.5,"MILL":8.2,"LUKE":8.7,"SHOP":12.3},"MARG":{"CEC":9.2,"DESH":9.6,"FAUS":4.1,"MTMS":8.0,"SACR":8.1,"ANGE":15.8,"AUGU":4.1,"BERN":12.8,"CATH":3.0,"DOMI":2.1,"ELIZ":3.6,"FRAN":11.3,"GABR":1.7,"GREG":10.4,"JERO":14.7,"JOAN":12.9,"JOSA":13.3,"KATE":11.6,"MARY":12.8,"MATT":7.2,"MICH":8.0,"NICH":16.9,"PETE":10.1,"RAPH":9.9,"PIUS":8.8,"THER":3.7,"TIMO":11.5,"ONEI":10.0,"LEBO":8.5,"RIFF":14.4,"MILL":4.6,"LUKE":9.1,"SHOP":6.7},"MARY":{"CEC":6.1,"DESH":9.2,"FAUS":8.5,"MTMS":3.7,"SACR":3.7,"ANGE":4.2,"AUGU":9.9,"BERN":1.2,"CATH":10.0,"DOMI":12.3,"ELIZ":16.2,"FRAN":2.7,"GABR":14.3,"GREG":5.2,"JERO":3.1,"JOAN":1.8,"JOSA":2.8,"KATE":9.7,"MARG":12.8,"MATT":11.9,"MICH":3.7,"NICH":5.1,"PETE":1.9,"RAPH":4.6,"PIUS":8.1,"THER":10.6,"TIMO":2.8,"ONEI":1.8,"LEBO":9.5,"RIFF":2.7,"MILL":7.8,"LUKE":2.8,"SHOP":6.5},"MATT":{"CEC":6.6,"DESH":3.0,"FAUS":6.4,"MTMS":8.4,"SACR":8.0,"ANGE":16.1,"AUGU":6.1,"BERN":12.9,"CATH":7.7,"DOMI":5.0,"ELIZ":10.5,"FRAN":11.1,"GABR":8.6,"GREG":13.8,"JERO":15.9,"JOAN":13.4,"JOSA":13.9,"KATE":5.0,"MARG":7.2,"MARY":11.9,"MICH":8.4,"NICH":17.6,"PETE":10.0,"RAPH":13.3,"PIUS":4.2,"THER":9.0,"TIMO":12.4,"ONEI":15.3,"LEBO":2.4,"RIFF":18.0,"MILL":5.6,"LUKE":9.2,"SHOP":10.3},"MICH":{"CEC":6.7,"DESH":8.0,"FAUS":5.1,"SACR":3.1,"ANGE":8.2,"AUGU":4.9,"BERN":4.8,"CATH":6.2,"DOMI":7.5,"ELIZ":11.4,"FRAN":5.3,"GABR":9.5,"GREG":2.8,"JERO":6.9,"JOAN":5.1,"JOSA":6.1,"KATE":10.3,"MARG":8.0,"MARY":3.7,"MATT":8.4,"NICH":9.0,"PETE":2.2,"RAPH":0.3,"PIUS":6.8,"THER":6.8,"TIMO":3.8,"ONEI":2.3,"LEBO":6.8,"RIFF":6.4,"MILL":4.4,"LUKE":2.7,"SHOP":3.1},"NICH":{"CEC":11.1,"DESH":14.6,"FAUS":14.2,"MTMS":9.1,"SACR":8.9,"ANGE":1.0,"AUGU":14.1,"BERN":3.9,"CATH":14.0,"DOMI":16.3,"ELIZ":20.2,"FRAN":5.7,"GABR":18.3,"GREG":9.2,"JERO":2.1,"JOAN":4.3,"JOSA":3.8,"KATE":15.1,"MARG":16.9,"MARY":5.1,"MATT":17.6,"MICH":9.0,"PETE":6.4,"RAPH":8.8,"PIUS":13.7,"THER":14.6,"TIMO":5.4,"ONEI":6.8,"LEBO":14.5,"RIFF":2.7,"MILL":13.7,"LUKE":7.8,"SHOP":10.6},"PETE":{"CEC":6.0,"DESH":8.8,"FAUS":7.2,"MTMS":2.3,"SACR":2.1,"ANGE":5.7,"AUGU":7.0,"BERN":2.6,"CATH":8.2,"DOMI":10.8,"ELIZ":13.5,"FRAN":4.2,"GABR":11.6,"GREG":3.8,"JERO":4.6,"JOAN":3.3,"JOSA":4.3,"KATE":9.6,"MARG":10.1,"MARY":1.9,"MATT":10.0,"MICH":2.2,"NICH":6.4,"RAPH":2.4,"PIUS":6.0,"THER":9.5,"TIMO":1.8,"LEBO":9.7,"RIFF":4.5,"MILL":6.4,"LUKE":1.0,"SHOP":5.6},"RAPH":{"CEC":7.3,"DESH":8.6,"FAUS":5.8,"MTMS":0.5,"SACR":3.8,"ANGE":7.7,"AUGU":5.6,"BERN":4.6,"CATH":7.0,"DOMI":9.3,"ELIZ":13.2,"FRAN":7.3,"GABR":11.3,"GREG":2.2,"JERO":6.6,"JOAN":6.4,"JOSA":6.8,"KATE":11.0,"MARG":9.9,"MARY":4.6,"MATT":13.3,"MICH":0.3,"NICH":8.8,"PETE":2.4,"PIUS":7.4,"THER":7.6,"TIMO":3.4,"ONEI":1.9,"LEBO":7.4,"RIFF":6.2,"MILL":5.2,"LUKE":3.1,"SHOP":3.8},"PIUS":{"CEC":2.8,"DESH":1.7,"FAUS":5.3,"MTMS":6.8,"SACR":4.4,"ANGE":12.6,"AUGU":4.9,"BERN":9.4,"CATH":8.7,"DOMI":7.9,"ELIZ":12.2,"FRAN":7.6,"GABR":10.3,"GREG":9.6,"JERO":11.4,"JOAN":9.3,"JOSA":9.7,"KATE":3.9,"MARG":8.8,"MARY":8.1,"MATT":4.2,"MICH":6.8,"NICH":13.7,"PETE":6.0,"RAPH":7.4,"THER":9.9,"TIMO":9.0,"ONEI":6.0,"LEBO":1.8,"RIFF":10.9,"MILL":3.9,"LUKE":5.0,"SHOP":8.7},"THER":{"CEC":9.7,"DESH":11.0,"FAUS":4.7,"MTMS":6.8,"SACR":7.0,"ANGE":13.6,"AUGU":4.9,"BERN":10.5,"CATH":1.4,"DOMI":4.0,"ELIZ":6.3,"FRAN":10.2,"GABR":4.5,"GREG":8.2,"JERO":12.5,"JOAN":12.0,"JOSA":12.2,"KATE":13.3,"MARG":3.7,"MARY":10.6,"MATT":9.0,"MICH":6.8,"NICH":14.6,"PETE":9.5,"RAPH":7.6,"PIUS":9.9,"TIMO":9.5,"ONEI":9.3,"LEBO":9.6,"RIFF":12.1,"MILL":5.7,"LUKE":8.2,"SHOP":4.6},"TIMO":{"CEC":7.5,"DESH":10.5,"FAUS":8.9,"MTMS":3.8,"SACR":3.9,"ANGE":4.6,"AUGU":8.7,"BERN":1.8,"CATH":8.7,"DOMI":10.9,"ELIZ":14.8,"FRAN":5.5,"GABR":13.0,"GREG":4.0,"JERO":4.0,"JOAN":4.2,"JOSA":5.6,"KATE":11.1,"MARG":11.5,"MARY":2.8,"MATT":12.4,"MICH":3.8,"NICH":5.4,"PETE":1.8,"RAPH":3.4,"PIUS":9.0,"THER":9.5,"ONEI":1.6,"LEBO":9.4,"RIFF":3.1,"MILL":8.2,"LUKE":3.0,"SHOP":5.3},"ONEI":{"CEC":5.9,"DESH":8.1,"FAUS":7.1,"MTMS":2.3,"SACR":2.3,"ANGE":5.8,"AUGU":6.9,"BERN":2.7,"CATH":8.6,"DOMI":9.5,"ELIZ":13.4,"FRAN":4.1,"GABR":11.5,"GREG":3.9,"JERO":4.7,"JOAN":3.3,"JOSA":4.2,"KATE":9.5,"MARG":10.0,"MARY":1.8,"MATT":15.3,"MICH":2.3,"NICH":6.8,"RAPH":1.9,"PIUS":6.0,"THER":9.3,"TIMO":1.6,"LEBO":7.6,"RIFF":4.2,"MILL":6.4,"LUKE":1.0,"SHOP":5.3},"LEBO":{"CEC":4.5,"DESH":1.7,"FAUS":5.2,"MTMS":6.9,"SACR":5.6,"ANGE":13.9,"AUGU":4.8,"BERN":10.8,"CATH":8.3,"DOMI":6.2,"ELIZ":11.1,"FRAN":8.9,"GABR":9.9,"GREG":9.4,"JERO":12.8,"JOAN":10.4,"JOSA":10.9,"KATE":4.4,"MARG":8.5,"MARY":9.5,"MATT":2.4,"MICH":6.8,"NICH":14.5,"PETE":9.7,"RAPH":7.4,"PIUS":1.8,"THER":9.6,"TIMO":9.4,"ONEI":7.6,"RIFF":12.3,"MILL":4.2,"LUKE":6.4,"SHOP":8.7},"RIFF":{"CEC":8.9,"DESH":12.0,"FAUS":11.6,"MTMS":6.4,"SACR":6.5,"ANGE":1.9,"AUGU":11.3,"BERN":1.4,"CATH":11.5,"DOMI":13.8,"ELIZ":17.7,"FRAN":3.9,"GABR":15.8,"GREG":6.6,"JERO":2.2,"JOAN":2.6,"JOSA":4.0,"KATE":12.5,"MARG":14.4,"MARY":2.7,"MATT":18.0,"MICH":6.4,"NICH":2.7,"PETE":4.5,"RAPH":6.2,"PIUS":10.9,"THER":12.1,"TIMO":3.1,"ONEI":4.2,"LEBO":12.3,"MILL":10.9,"LUKE":5.1,"SHOP":8.0},"MILL":{"CEC":4.6,"DESH":5.4,"FAUS":1.1,"MTMS":4.4,"SACR":4.5,"ANGE":12.7,"AUGU":0.7,"BERN":9.6,"CATH":4.5,"DOMI":4.0,"ELIZ":8.0,"FRAN":7.7,"GABR":6.1,"GREG":6.8,"JERO":11.4,"JOAN":9.2,"JOSA":9.7,"KATE":8.2,"MARG":4.6,"MARY":7.8,"MATT":5.6,"MICH":4.4,"NICH":13.7,"PETE":6.4,"RAPH":5.2,"PIUS":3.9,"THER":5.7,"TIMO":8.2,"ONEI":6.4,"LEBO":4.2,"RIFF":10.9,"LUKE":5.6,"SHOP":4.7},"LUKE":{"CEC":5.1,"DESH":6.9,"FAUS":6.1,"MTMS":2.8,"SACR":1.3,"ANGE":7.1,"AUGU":5.9,"BERN":3.6,"CATH":7.4,"DOMI":8.5,"ELIZ":12.4,"FRAN":3.5,"GABR":10.5,"GREG":5.2,"JERO":6.0,"JOAN":3.8,"JOSA":4.2,"KATE":8.7,"MARG":9.1,"MARY":2.8,"MATT":9.2,"MICH":2.7,"NICH":7.8,"PETE":1.0,"RAPH":3.1,"PIUS":5.0,"THER":8.2,"TIMO":3.0,"ONEI":1.0,"LEBO":6.4,"RIFF":5.1,"MILL":5.6,"SHOP":5.2},"SHOP":{"CEC":8.7,"DESH":12.9,"FAUS":4.6,"MTMS":3.1,"SACR":5.1,"ANGE":9.6,"AUGU":4.8,"BERN":6.4,"CATH":4.0,"DOMI":6.0,"ELIZ":9.8,"FRAN":7.3,"GABR":8.0,"GREG":4.0,"JERO":8.4,"JOAN":7.9,"JOSA":9.3,"KATE":12.3,"MARG":6.7,"MARY":6.5,"MATT":10.3,"MICH":3.1,"NICH":10.6,"PETE":5.6,"RAPH":3.8,"PIUS":8.7,"THER":4.6,"TIMO":5.3,"ONEI":5.3,"LEBO":8.7,"RIFF":8.0,"MILL":4.7,"LUKE":5.2}};
+
+let msalInst,acct,stops=[],tripDate=new Date();
+
+function getSavedClientId(){return "e11852a2-8e8d-4a75-996b-0b5d6f66efaa";}
+function getSavedFilePath(){return localStorage.getItem("mileage_file_path")||""}
+function getTemplatePath(){return localStorage.getItem("mileage_file_path")||""}
+
+function getMonthlyFileName(){
+  const d=new Date();
+  const month=d.toLocaleString("en-US",{month:"long"});
+  const year=d.getFullYear();
+  return "Mileage_"+month+"_"+year+".xlsm";
+}
+
+function getMonthlyFilePath(){
+  const tpl=getTemplatePath();
+  if(!tpl)return "";
+  const folder=tpl.substring(0,tpl.lastIndexOf("/"));
+  return folder+"/"+getMonthlyFileName();
+}
+
+function getActiveFilePath(){
+  // Use monthly file path, not template
+  return getMonthlyFilePath();
+}
+
+
+let _browserStack=[];
+
+async function browseOneDrive(){
+  _browserStack=[];
+  await _listFolder("root","/ (OneDrive root)");
+}
+
+async function _listFolder(folderId, folderName){
+  const el=document.getElementById("foundFiles");
+  el.innerHTML='<span style="color:var(--muted);font-size:12px">Loading...</span>';
+  try{
+    const tok=await getToken();
+    const url=folderId==="root"
+      ?"https://graph.microsoft.com/v1.0/me/drive/root/children?$select=name,id,folder,file,parentReference"
+      :"https://graph.microsoft.com/v1.0/me/drive/items/"+folderId+"/children?$select=name,id,folder,file,parentReference";
+    const res=await fetch(url,{headers:{"Authorization":"Bearer "+tok}});
+    const data=await res.json();
+    if(!data.value){el.innerHTML='<span style="color:var(--danger);font-size:12px">Error loading folder</span>';return;}
+
+    const items=data.value.filter(i=>i.folder||(i.file&&(i.name.endsWith(".xlsm")||i.name.endsWith(".xlsx"))));
+    items.sort((a,b)=>{
+      if(a.folder&&!b.folder)return -1;
+      if(!a.folder&&b.folder)return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    let html='<div style="font-size:11px;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:8px">';
+    if(_browserStack.length>0){
+      html+='<span style="cursor:pointer;color:var(--accent)" onclick="_goBack()">&#8592; Back</span> &middot; ';
+    }
+    html+=folderName+'</div>';
+
+    if(items.length===0){
+      html+='<div style="font-size:12px;color:var(--muted)">No folders or .xlsm files here</div>';
+    } else {
+      items.forEach(item=>{
+        if(item.folder){
+          html+='<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;background:var(--surface);border-radius:8px;cursor:pointer;margin-top:5px" onclick="_openFolder(\''+item.id+'\',\''+item.name.replace(/'/g,"")+'\')">'
+            +'<span style="font-size:16px">&#128193;</span>'
+            +'<span style="font-size:13px;color:var(--text)">'+item.name+'</span>'
+            +'<span style="margin-left:auto;color:var(--muted);font-size:12px">&#8250;</span>'
+            +'</div>';
+        } else {
+          const path=(item.parentReference.path||"").replace("/drive/root:","")+"/" +item.name;
+          html+='<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;background:var(--chip-bg);border:1px solid var(--chip-border);border-radius:8px;cursor:pointer;margin-top:5px" onclick="selectFile(\''+path.replace(/'/g,"")+'\')">'
+            +'<span style="font-size:16px">&#128196;</span>'
+            +'<span style="font-size:13px;color:var(--accent)">'+item.name+'</span>'
+            +'<span style="margin-left:auto;font-size:11px;color:var(--accent2)">Select</span>'
+            +'</div>';
+        }
+      });
+    }
+    el.innerHTML=html;
+  }catch(e){
+    document.getElementById("foundFiles").innerHTML='<span style="color:var(--danger);font-size:12px">Error: '+e.message+'</span>';
+  }
+}
+
+function _openFolder(id,name){
+  _browserStack.push({id,name});
+  _listFolder(id,name);
+}
+
+function _goBack(){
+  _browserStack.pop();
+  if(_browserStack.length===0){
+    _listFolder("root","/ (OneDrive root)");
+  } else {
+    const prev=_browserStack[_browserStack.length-1];
+    _listFolder(prev.id,prev.name);
+  }
+}
+
+function selectFile(path){
+  document.getElementById("filePathInput").value=path;
+  document.getElementById("foundFiles").innerHTML='<div style="margin-top:6px;padding:8px;background:rgba(110,231,183,.1);border:1px solid var(--accent2);border-radius:8px;font-size:12px;color:var(--accent2)">&#10003; '+path+'</div>';
+}
+
+let _msalReady=null;
+
+async function getMsal(){
+  if(msalInst)return msalInst;
+  if(_msalReady)return _msalReady;
+  const cid=getSavedClientId();
+  if(!cid){showAzureHelp();return null;}
+  const msalLib=window.msalBrowser||window.msal;
+  if(!msalLib){document.getElementById("loginStatus").textContent="Auth library not loaded. Check internet connection.";return null;}
+  const inst=new msalLib.PublicClientApplication({
+    auth:{clientId:cid,authority:"https://login.microsoftonline.com/organizations",redirectUri:location.href.split("?")[0].split("#")[0]},
+    cache:{cacheLocation:"localStorage"}
+  });
+  _msalReady=inst.initialize().then(()=>{msalInst=inst;_msalReady=null;return inst;});
+  return _msalReady;
+}
+
+async function initAuth(){
+  const cid=getSavedClientId();
+  if(!cid){showAzureHelp();return;}
+  try{
+    const inst=await getMsal();
+    if(!inst)return;
+    const r=await inst.handleRedirectPromise();
+    if(r){acct=r.account;afterLogin();}
+    else{const a=inst.getAllAccounts();if(a.length){acct=a[0];afterLogin();}}
+  }catch(e){document.getElementById("loginStatus").textContent="Auth error: "+e.message;}
+}
+
+function afterLogin(){
+  const fp=getSavedFilePath();
+  if(!fp){showScreen("setupScreen");}
+  else{
+    document.getElementById("userBadge").textContent=acct?.username||"Sign out";
+    showScreen("appScreen");
+    ensureMonthlyFile();
+  }
+}
+
+async function ensureMonthlyFile(){
+  const monthlyPath=getMonthlyFilePath();
+  const templatePath=getTemplatePath();
+  if(!monthlyPath||!templatePath)return;
+
+  const monthName=getMonthlyFileName();
+  document.getElementById("appStatus").textContent="Checking "+monthName+"...";
+  document.getElementById("appStatus").className="status-bar";
+
+  try{
+    const tok=await getToken();
+    // Check if monthly file already exists
+    const checkRes=await fetch(
+      "https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(monthlyPath),
+      {headers:{"Authorization":"Bearer "+tok}}
+    );
+
+    if(checkRes.ok){
+      // File exists
+      document.getElementById("appStatus").textContent="Using "+monthName;
+      document.getElementById("appStatus").className="status-bar ok";
+      setTimeout(()=>{document.getElementById("appStatus").textContent="";},3000);
+      return;
+    }
+
+    // File doesn't exist — copy template
+    document.getElementById("appStatus").textContent="Creating "+monthName+"...";
+
+    // Get template item ID
+    const tplRes=await fetch(
+      "https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(templatePath),
+      {headers:{"Authorization":"Bearer "+tok}}
+    );
+    if(!tplRes.ok)throw new Error("Template file not found. Check setup.");
+    const tplData=await tplRes.json();
+    const tplId=tplData.id;
+
+    // Get destination folder ID
+    const folder=monthlyPath.substring(0,monthlyPath.lastIndexOf("/"));
+    const folderRes=await fetch(
+      "https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(folder),
+      {headers:{"Authorization":"Bearer "+tok}}
+    );
+    if(!folderRes.ok)throw new Error("Could not find destination folder");
+    const folderData=await folderRes.json();
+
+    // Copy template to new monthly file
+    const copyRes=await fetch(
+      "https://graph.microsoft.com/v1.0/me/drive/items/"+tplId+"/copy",
+      {
+        method:"POST",
+        headers:{"Authorization":"Bearer "+tok,"Content-Type":"application/json"},
+        body:JSON.stringify({
+          parentReference:{driveId:folderData.parentReference?.driveId||tplData.parentReference.driveId,id:folderData.id},
+          name:monthName
+        })
+      }
+    );
+    if(!copyRes.ok){const e=await copyRes.json().catch(()=>({}));throw new Error(e?.error?.message||"Copy failed");}
+
+    // Copy is async — wait a moment for OneDrive to finish
+    document.getElementById("appStatus").textContent="Creating "+monthName+"... please wait";
+    await new Promise(r=>setTimeout(r,4000));
+
+    // Fill header fields on page 1
+    await fillFormHeader(tok, folder+"/"+monthName);
+
+    document.getElementById("appStatus").textContent="✓ "+monthName+" ready!";
+    document.getElementById("appStatus").className="status-bar ok";
+    setTimeout(()=>{document.getElementById("appStatus").textContent="";},3000);
+
+  }catch(e){
+    document.getElementById("appStatus").textContent="⚠️ "+e.message;
+    document.getElementById("appStatus").className="status-bar err";
+  }
+}
+
+async function signIn(){
+  try{
+    const inst=await getMsal();
+    if(!inst)return;
+    await inst.loginRedirect({scopes:["Files.ReadWrite","User.Read"]});
+  }catch(e){document.getElementById("loginStatus").textContent="Sign-in error: "+e.message;}
+}
+
+function signOut(){if(confirm("Sign out?"))msalInst.logoutRedirect();}
+
+async function getToken(){
+  const inst=await getMsal();
+  if(!inst)throw new Error("Not signed in");
+  if(!acct){const a=inst.getAllAccounts();if(a.length)acct=a[0];}
+  if(!acct){await inst.loginRedirect({scopes:["Files.ReadWrite","User.Read"]});throw new Error("Redirecting to login");}
+  const r={scopes:["Files.ReadWrite"],account:acct};
+  try{return(await inst.acquireTokenSilent(r)).accessToken;}
+  catch{
+    // Popup blocked in PWA — use redirect instead
+    await inst.acquireTokenRedirect(r);
+    return null;
+  }
+}
+
+function saveClientId(){
+  const v=document.getElementById("clientIdInput").value.trim();
+  if(!v||v.length<30){document.getElementById("setupStatus").textContent="Please enter a valid Client ID";return;}
+  localStorage.setItem("mileage_client_id",v);
+  document.getElementById("setupStatus").textContent="";
+  // Go to login screen so user can sign in
+  showScreen("loginScreen");
+  document.getElementById("loginStatus").textContent="";
+  // Re-init MSAL with new client ID
+  msalInst=null;
+  initAuth();
+
+// Register service worker for PWA
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+}
+}
+
+function saveFilePath(){
+  const v=document.getElementById("filePathInput").value.trim();
+  if(!v.startsWith("/")){document.getElementById("setupStatus").textContent="Path must start with /";return;}
+  localStorage.setItem("mileage_file_path",v);
+  // Show profile setup if not done yet
+  if(!localStorage.getItem("mileage_user_name")){
+    document.getElementById("profileCard").style.display="block";
+    // Pre-fill name if known
+    const saved=localStorage.getItem("mileage_user_name")||"";
+    document.getElementById("userNameInput").value=saved;
+    initSigPad();
+    document.getElementById("profileCard").scrollIntoView({behavior:"smooth"});
+  } else {
+    afterLogin();
+  }
+}
+
+function saveProfile(){
+  const name=document.getElementById("userNameInput").value.trim();
+  if(!name){document.getElementById("setupStatus").textContent="Please enter your name";return;}
+  localStorage.setItem("mileage_user_name",name);
+  // Save signature as base64
+  const canvas=document.getElementById("sigCanvas");
+  const sig=canvas.toDataURL("image/png");
+  localStorage.setItem("mileage_signature",sig);
+  afterLogin();
+}
+
+// Signature pad
+let _sigDrawing=false,_sigCtx=null;
+function initSigPad(){
+  const canvas=document.getElementById("sigCanvas");
+  _sigCtx=canvas.getContext("2d");
+  _sigCtx.strokeStyle="#1a1a2e";
+  _sigCtx.lineWidth=2.5;
+  _sigCtx.lineCap="round";
+  _sigCtx.lineJoin="round";
+
+  function getPos(e){
+    const r=canvas.getBoundingClientRect();
+    const scaleX=canvas.width/r.width;
+    const scaleY=canvas.height/r.height;
+    const src=e.touches?e.touches[0]:e;
+    return{x:(src.clientX-r.left)*scaleX,y:(src.clientY-r.top)*scaleY};
+  }
+  canvas.onmousedown=canvas.ontouchstart=e=>{e.preventDefault();_sigDrawing=true;const p=getPos(e);_sigCtx.beginPath();_sigCtx.moveTo(p.x,p.y);};
+  canvas.onmousemove=canvas.ontouchmove=e=>{e.preventDefault();if(!_sigDrawing)return;const p=getPos(e);_sigCtx.lineTo(p.x,p.y);_sigCtx.stroke();};
+  canvas.onmouseup=canvas.ontouchend=()=>{_sigDrawing=false;};
+}
+function clearSig(){if(_sigCtx){const c=document.getElementById("sigCanvas");_sigCtx.clearRect(0,0,c.width,c.height);}}
+
+function resetFilePath(){
+  const choice=confirm("Settings:\n\nOK = Change template file\nCancel = Edit profile (name/signature)");
+  if(choice){
+    localStorage.removeItem("mileage_file_path");
+    showScreen("setupScreen");
+  } else {
+    localStorage.removeItem("mileage_user_name");
+    localStorage.removeItem("mileage_signature");
+    localStorage.removeItem("mileage_file_path");
+    showScreen("setupScreen");
+  }
+}
+
+function showAzureHelp(){
+  document.getElementById("azureHelpCard").style.display="block";
+  showScreen("setupScreen");
+}
+
+function showScreen(id){document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));document.getElementById(id).classList.add("active");}
+
+function getDist(a,b){return(D[a]&&D[a][b])||(D[b]&&D[b][a])||null;}
+function buildRoute(){const direct=document.getElementById("directToggle").checked;return["CEC",...stops,...(direct?[]:["CEC"])];}
+
+function calcLegs(){
+  const route=buildRoute(),legs=[];
+  for(let i=0;i<route.length-1;i++){
+    const from=route[i],to=route[i+1];
+    legs.push({from,to,fromName:LOCS.find(l=>l.code===from)?.name||from,toName:LOCS.find(l=>l.code===to)?.name||to,km:getDist(from,to)});
+  }
+  return legs;
+}
+
+function fmtDate(d){return d.toISOString().split("T")[0];}
+
+function renderRoute(){
+  const cont=document.getElementById("routeStops"),km=document.getElementById("kmPreview");
+  if(!stops.length){cont.innerHTML='<div class="empty-state">Add stops below…</div>';km.classList.remove("visible");document.getElementById("submitBtn").disabled=true;return;}
+  let h='<span class="stop-chip origin">CEC</span>';
+  stops.forEach((c,i)=>{h+='<span class="arrow">&rarr;</span><span class="stop-chip">'+c+'<button class="remove" onclick="removeStop('+i+')">&#215;</button></span>';});
+  if(!document.getElementById("directToggle").checked)h+='<span class="arrow">&rarr;</span><span class="stop-chip origin">CEC</span>';
+  cont.innerHTML=h;
+  const legs=calcLegs(),tot=legs.reduce((s,l)=>s+(l.km||0),0);
+  km.textContent=legs.map(l=>l.from+"\u2192"+l.to+": "+(l.km??'?')).join(" · ")+" | Total: "+tot.toFixed(1)+" km";
+  km.classList.add("visible");
+  document.getElementById("submitBtn").disabled=false;
+  document.getElementById("submitBtn").textContent="Log mileage to OneDrive";
+  document.getElementById("submitBtn").className="submit-btn";
+}
+
+function addStop(c){stops.push(c);renderRoute();document.getElementById("searchInput").value="";hideSuggestions();document.getElementById("searchInput").focus();}
+function removeStop(i){stops.splice(i,1);renderRoute();}
+function clearAll(){stops=[];tripDate=new Date();updateDateBadge();document.getElementById("directToggle").checked=false;renderRoute();document.getElementById("searchInput").value="";document.getElementById("appStatus").textContent="";}
+document.getElementById("directToggle").addEventListener("change",renderRoute);
+
+const si=document.getElementById("searchInput"),sg=document.getElementById("suggestions");
+si.addEventListener("input",function(){
+  const q=this.value.trim().toLowerCase();
+  if(!q){hideSuggestions();return;}
+  const m=LOCS.filter(l=>l.code.toLowerCase().startsWith(q)||l.name.toLowerCase().includes(q)).slice(0,6);
+  if(!m.length){hideSuggestions();return;}
+  sg.innerHTML=m.map(l=>'<div class="suggestion-item" onclick="addStop(\''+l.code+'\')"><span class="suggestion-code">'+l.code+'</span><span class="suggestion-name">'+l.name+'</span></div>').join("");
+  sg.classList.add("visible");
+});
+si.addEventListener("blur",()=>setTimeout(hideSuggestions,150));
+function hideSuggestions(){sg.classList.remove("visible");sg.innerHTML="";}
+
+async function fillFormHeader(tok, filePath){
+  const name=localStorage.getItem("mileage_user_name")||"";
+  const now=new Date();
+  const monthYear=now.toLocaleString("en-US",{month:"long",year:"numeric"});
+  const base="https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(filePath)+":/workbook/worksheets/page%201";
+
+  // Fill Name (B2), Location (B3), Date (B4)
+  const headerVals=[[name],[" CEC"],[monthYear]];
+  await fetch(base+"/range(address='B2:B4')",{
+    method:"PATCH",
+    headers:{"Authorization":"Bearer "+tok,"Content-Type":"application/json"},
+    body:JSON.stringify({values:headerVals})
+  });
+
+  // Fill signature field — write name as text signature (B37 or nearby)
+  // Find signature row by writing to common signature area
+  await fetch(base+"/range(address='B37')",{
+    method:"PATCH",
+    headers:{"Authorization":"Bearer "+tok,"Content-Type":"application/json"},
+    body:JSON.stringify({values:[[name]]})
+  }).catch(()=>{});
+}
+
+async function submitMileage(){
+  const btn=document.getElementById("submitBtn"),legs=calcLegs();
+  if(!legs.length)return;
+  btn.disabled=true;btn.className="submit-btn loading";btn.textContent="Saving to OneDrive…";
+  document.getElementById("appStatus").textContent="";
+  try{
+    const tok=await getToken(),fp=getActiveFilePath(),ds=fmtDate(tripDate);
+    // Show which file we are writing to
+    const fname=fp.substring(fp.lastIndexOf("/")+1);
+    document.getElementById("appStatus").textContent="Writing to: "+fname;
+    document.getElementById("appStatus").className="status-bar";
+    await new Promise(r=>setTimeout(r,1500));
+    const base="https://graph.microsoft.com/v1.0/me/drive/root:"+encodeURIComponent(fp)+":/workbook/worksheets/page%201";
+
+    // Find first empty row in page 1 (rows 11-35 = Excel data area)
+    const usedRes=await fetch(base+"/range(address='A11:D35')",{headers:{"Authorization":"Bearer "+tok}});
+    if(!usedRes.ok)throw new Error("Could not read page 1");
+    const usedData=await usedRes.json();
+    const values=usedData.values||[];
+    let firstEmpty=11;
+    for(let i=0;i<values.length;i++){
+      if(values[i][0]===null||values[i][0]===""){firstEmpty=11+i;break;}
+      firstEmpty=11+i+1;
+    }
+    if(firstEmpty>35)throw new Error("Page 1 is full (rows 11-35 all used)");
+
+    // Build single row: date, all stops comma-separated, total km
+    const route=buildRoute();
+    const description=route.join(", ");
+    const totalKm=legs.reduce((s,l)=>s+(l.km||0),0);
+    const writeValues=[[ds, description, parseFloat(totalKm.toFixed(1)), null]];
+    const lastRow=firstEmpty;
+    const range="A"+firstEmpty+":D"+lastRow;
+    const writeRes=await fetch(base+"/range(address='"+range+"')",{
+      method:"PATCH",
+      headers:{"Authorization":"Bearer "+tok,"Content-Type":"application/json"},
+      body:JSON.stringify({values:writeValues})
+    });
+    if(!writeRes.ok){const e=await writeRes.json().catch(()=>({}));throw new Error(e?.error?.message||"HTTP "+writeRes.status);}
+
+    const tot=legs.reduce((s,l)=>s+(l.km||0),0);
+    btn.className="submit-btn success";btn.textContent="✓ Saved "+legs.length+" leg"+(legs.length>1?"s":"")+" — "+tot.toFixed(1)+" km";
+    stops=[];
+    setTimeout(()=>{renderRoute();btn.textContent="Log mileage to OneDrive";btn.className="submit-btn";btn.disabled=true;},3000);
+  }catch(e){
+    btn.className="submit-btn error";btn.textContent="Failed — tap to retry";btn.disabled=false;
+    document.getElementById("appStatus").textContent="⚠️ "+e.message;
+    document.getElementById("appStatus").className="status-bar err";
+  }
+}
+
+function updateDateBadge(){
+  const t=new Date(),same=fmtDate(tripDate)===fmtDate(t);
+  document.getElementById("dateBadge").textContent="\ud83d\udcc5 "+(same?"Today":tripDate.toLocaleDateString("en-CA",{month:"short",day:"numeric"}));
+}
+function openDateModal(){document.getElementById("dateInput").value=fmtDate(tripDate);document.getElementById("dateModal").classList.add("open");}
+function setDate(){const v=document.getElementById("dateInput").value;if(v){tripDate=new Date(v+"T12:00:00");updateDateBadge();}document.getElementById("dateModal").classList.remove("open");}
+document.getElementById("dateModal").addEventListener("click",function(e){if(e.target===this)this.classList.remove("open");});
+
+initAuth();
+
+// Register service worker for PWA
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>
